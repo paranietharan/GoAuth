@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"time"
 
 	"GoAuth/internal/email"
@@ -32,32 +33,33 @@ func NewService(userRepo *UserRepository, tokenRepo *TokenRepository, emailServi
 }
 
 func (s *Service) Register(req *RegisterRequest) error {
-	// Check if user already exists
 	existingUser, _ := s.userRepo.GetByEmail(req.Email)
 	if existingUser != nil {
 		return fmt.Errorf("user with this email already exists")
 	}
 
-	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	// Create user
+	userRole, err := s.userRepo.GetRole("user")
+	if err != nil {
+		return fmt.Errorf("failed to get user role: %w", err)
+	}
+
 	user := &User{
 		Email:        req.Email,
 		PasswordHash: string(hashedPassword),
 		FirstName:    req.FirstName,
 		LastName:     req.LastName,
-		Role:         "user",
+		RoleID:       &userRole.ID,
 	}
 
 	if err := s.userRepo.Create(user); err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 
-	// Generate verification token
 	verificationToken, err := s.generateToken()
 	if err != nil {
 		return fmt.Errorf("failed to generate token: %w", err)
@@ -74,7 +76,6 @@ func (s *Service) Register(req *RegisterRequest) error {
 		return fmt.Errorf("failed to create verification token: %w", err)
 	}
 
-	// Send verification email asynchronously
 	job := &worker.EmailJob{
 		To:      user.Email,
 		Subject: "Verify Your Email",
@@ -91,7 +92,6 @@ func (s *Service) Login(req *LoginRequest) (*LoginResponse, error) {
 		return nil, fmt.Errorf("invalid credentials")
 	}
 
-	// Check password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		return nil, fmt.Errorf("invalid credentials")
 	}
@@ -100,13 +100,11 @@ func (s *Service) Login(req *LoginRequest) (*LoginResponse, error) {
 		return nil, fmt.Errorf("account is deactivated")
 	}
 
-	// Generate JWT token
 	accessToken, err := s.generateJWT(user)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %w", err)
 	}
 
-	// Generate refresh token
 	refreshToken, err := s.generateToken()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
@@ -147,12 +145,10 @@ func (s *Service) VerifyEmail(tokenStr string) error {
 		return fmt.Errorf("invalid token type")
 	}
 
-	// Mark user as verified
 	if err := s.userRepo.UpdateVerified(token.UserID, true); err != nil {
 		return fmt.Errorf("failed to verify user: %w", err)
 	}
 
-	// Mark token as used
 	if err := s.tokenRepo.MarkAsUsed(token.ID); err != nil {
 		return fmt.Errorf("failed to mark token as used: %w", err)
 	}
@@ -163,11 +159,9 @@ func (s *Service) VerifyEmail(tokenStr string) error {
 func (s *Service) ForgotPassword(req *ForgotPasswordRequest) error {
 	user, err := s.userRepo.GetByEmail(req.Email)
 	if err != nil {
-		// Return success even if user doesn't exist (security)
 		return nil
 	}
 
-	// Generate reset token
 	resetToken, err := s.generateToken()
 	if err != nil {
 		return fmt.Errorf("failed to generate token: %w", err)
@@ -184,7 +178,6 @@ func (s *Service) ForgotPassword(req *ForgotPasswordRequest) error {
 		return fmt.Errorf("failed to create reset token: %w", err)
 	}
 
-	// Send reset email asynchronously
 	job := &worker.EmailJob{
 		To:      user.Email,
 		Subject: "Reset Your Password",
@@ -232,7 +225,7 @@ func (s *Service) ResetPassword(req *ResetPasswordRequest) error {
 	return nil
 }
 
-func (s *Service) ChangePassword(userID int, req *ChangePasswordRequest) error {
+func (s *Service) ChangePassword(userID string, req *ChangePasswordRequest) error {
 	user, err := s.userRepo.GetByID(userID)
 	if err != nil {
 		return fmt.Errorf("user not found")
@@ -289,7 +282,7 @@ func (s *Service) RefreshAccessToken(refreshTokenStr string) (*LoginResponse, er
 	}, nil
 }
 
-func (s *Service) Logout(userID int, refreshToken string) error {
+func (s *Service) Logout(userID string, refreshToken string) error {
 	rt, err := s.tokenRepo.GetRefreshToken(refreshToken)
 	if err != nil {
 		return nil // Silent fail
@@ -320,4 +313,30 @@ func (s *Service) generateToken() (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+func (s *Service) GetAllUsers() ([]User, error) {
+	users, err := s.userRepo.GetAll()
+	if err != nil {
+		log.Printf("Error fetching all users : %v\n", err)
+		return nil, fmt.Errorf("failed to get all users: %w", err)
+	}
+	return users, nil
+}
+
+func (s *Service) Delete(userID string) error {
+	_, err := s.userRepo.GetByID(userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	if err := s.userRepo.Delete(userID); err != nil {
+		return fmt.Errorf("failed to delete user: %w", err)
+	}
+
+	if err := s.tokenRepo.RevokeAllUserRefreshTokens(userID); err != nil {
+		fmt.Printf("Warning: failed to clean up tokens for user %d: %v\n", userID, err)
+	}
+
+	return nil
 }

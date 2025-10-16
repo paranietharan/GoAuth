@@ -1,7 +1,9 @@
+// internal/auth/handler.go
 package auth
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
@@ -116,7 +118,7 @@ func (h *Handler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(int)
+	userID := r.Context().Value("user_id").(string)
 
 	var req ChangePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -159,29 +161,23 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	userIDVal := r.Context().Value("user_id")
-	emailVal := r.Context().Value("email")
-	roleVal := r.Context().Value("role")
-
-	if userIDVal == nil || emailVal == nil || roleVal == nil {
-		http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
-
-	user := &User{
-		ID:    userIDVal.(int),
-		Email: emailVal.(string),
-		Role:  roleVal.(string),
-	}
-
+	user := r.Context().Value("user").(*User)
 	respondJSON(w, http.StatusOK, user)
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	userIDVal := r.Context().Value("user_id")
-	userID, ok := userIDVal.(int)
-	if userIDVal == nil || !ok {
-		http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
+	if userIDVal == nil {
+		respondError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var userID string
+	switch v := userIDVal.(type) {
+	case string:
+		userID = v
+	default:
+		respondError(w, http.StatusUnauthorized, "Invalid user ID type")
 		return
 	}
 
@@ -201,7 +197,57 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	respondSuccess(w, http.StatusOK, "Logged out successfully", nil)
 }
 
-// Helper functions
+func (h *Handler) GetAllUsers(w http.ResponseWriter, r *http.Request) {
+	users, err := h.service.GetAllUsers()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to fetch users")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Users retrieved successfully",
+		"data":    users,
+		"count":   len(users),
+	})
+}
+
+func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	userIDVal := r.Context().Value("user_id")
+	if userIDVal == nil {
+		respondError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	var userID string
+	switch v := userIDVal.(type) {
+	case string:
+		userID = v
+	default:
+		respondError(w, http.StatusUnauthorized, "Invalid user ID type")
+		return
+	}
+
+	vars := r.Context().Value("vars").(map[string]string)
+	var targetUserID string
+	_, err := fmt.Sscanf(vars["id"], "%d", &targetUserID)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	if userID == targetUserID {
+		respondError(w, http.StatusBadRequest, "Cannot delete your own account")
+		return
+	}
+
+	if err := h.service.Delete(targetUserID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to delete user")
+		return
+	}
+
+	respondSuccess(w, http.StatusOK, "User deleted successfully", nil)
+}
+
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
