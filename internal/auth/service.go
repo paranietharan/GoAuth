@@ -335,7 +335,7 @@ func (s *Service) Delete(userID string) error {
 	}
 
 	if err := s.tokenRepo.RevokeAllUserRefreshTokens(userID); err != nil {
-		fmt.Printf("Warning: failed to clean up tokens for user %d: %v\n", userID, err)
+		fmt.Printf("Warning: failed to clean up tokens for user %s: %v\n", userID, err)
 	}
 
 	return nil

@@ -29,12 +29,16 @@ func main() {
 	}
 	defer db.Close()
 
-	if err := database.RunMigrations(db); err != nil {
-		log.Fatalf("Failed to run migrations: %v", err)
+	if cfg.RUN_Migrations {
+		if err := database.RunMigrations(db, cfg.RUN_Drop_Migrations); err != nil {
+			log.Fatalf("Failed to run migrations: %v", err)
+		}
 	}
 
-	if err := database.SeedDatabase(db); err != nil {
-		log.Fatalf("Failed to seed database: %v", err)
+	if cfg.SEED_DB {
+		if err := database.SeedDatabase(db); err != nil {
+			log.Fatalf("Failed to seed database: %v", err)
+		}
 	}
 
 	emailService := email.NewService(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPassword, cfg.SMTPFrom)

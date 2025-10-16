@@ -2,18 +2,24 @@ package config
 
 import (
 	"os"
+	"strconv"
 )
 
 type Config struct {
-	Port         string
-	DatabaseURL  string
-	JWTSecret    string
+	Port        string
+	DatabaseURL string
+	JWTSecret   string
+
+	// SMTP
 	SMTPHost     string
 	SMTPPort     string
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string
-	AppURL       string
+
+	RUN_Drop_Migrations bool
+	RUN_Migrations      bool
+	SEED_DB             bool
 }
 
 func Load() *Config {
@@ -26,13 +32,25 @@ func Load() *Config {
 		SMTPUser:     getEnv("SMTP_USER", "your-email@gmail.com"),
 		SMTPPassword: getEnv("SMTP_PASSWORD", "your-app-password"),
 		SMTPFrom:     getEnv("SMTP_FROM", "noreply@GoAuth.com"),
-		AppURL:       getEnv("APP_URL", "http://localhost:8080"),
+
+		RUN_Migrations:      getEnvBool("RUN_MIGRATIONS", true),
+		RUN_Drop_Migrations: getEnvBool("RUN_DROP_MIGRATIONS", true),
+		SEED_DB:             getEnvBool("SEED_DB", true),
 	}
 }
 
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolValue, err := strconv.ParseBool(value); err == nil {
+			return boolValue
+		}
 	}
 	return defaultValue
 }

@@ -52,8 +52,16 @@ func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
 			log.Printf("Claims: %+v", claims)
 
 			userID, _ := claims["user_id"].(string)
+			if !ok || userID == "" {
+				http.Error(w, `{"error":"Invalid or missing user_id claim"}`, http.StatusUnauthorized)
+				return
+			}
 
-			email, _ := claims["email"].(string)
+			email, ok := claims["email"].(string)
+			if !ok || email == "" {
+				http.Error(w, `{"error":"Invalid or missing email claim"}`, http.StatusUnauthorized)
+				return
+			}
 
 			var roleName string
 			switch v := claims["role"].(type) {

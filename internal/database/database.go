@@ -26,21 +26,23 @@ func NewPostgresDB(databaseURL string) (*sql.DB, error) {
 	return db, nil
 }
 
-func RunMigrations(db *sql.DB) error {
-	dropMigrations := []string{
-		`DROP TABLE IF EXISTS refresh_tokens CASCADE`,
-		`DROP TABLE IF EXISTS tokens CASCADE`,
-		`DROP TABLE IF EXISTS role_permissions CASCADE`,
-		`DROP TABLE IF EXISTS users CASCADE`,
-		`DROP TABLE IF EXISTS permissions CASCADE`,
-		`DROP TABLE IF EXISTS roles CASCADE`,
-	}
+func RunMigrations(db *sql.DB, run_drop_migrations bool) error {
+	if run_drop_migrations {
+		dropMigrations := []string{
+			`DROP TABLE IF EXISTS refresh_tokens CASCADE`,
+			`DROP TABLE IF EXISTS tokens CASCADE`,
+			`DROP TABLE IF EXISTS role_permissions CASCADE`,
+			`DROP TABLE IF EXISTS users CASCADE`,
+			`DROP TABLE IF EXISTS permissions CASCADE`,
+			`DROP TABLE IF EXISTS roles CASCADE`,
+		}
 
-	log.Println("Dropping existing tables...")
-	for i, migration := range dropMigrations {
-		log.Printf("Dropping table %d/%d", i+1, len(dropMigrations))
-		if _, err := db.Exec(migration); err != nil {
-			log.Printf("Warning: Failed to drop: %v", err)
+		log.Println("Dropping existing tables...")
+		for i, migration := range dropMigrations {
+			log.Printf("Dropping table %d/%d", i+1, len(dropMigrations))
+			if _, err := db.Exec(migration); err != nil {
+				log.Printf("Warning: Failed to drop: %v", err)
+			}
 		}
 	}
 	migrations := []string{
