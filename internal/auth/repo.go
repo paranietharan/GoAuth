@@ -183,7 +183,7 @@ func (r *UserRepository) GetAll() ([]User, error) {
 			&user.LastName,
 			&user.IsVerified,
 			&user.IsActive,
-			&roleID, // Scan into NullInt64
+			&roleID,
 			&user.CreatedAt,
 			&user.UpdatedAt,
 			&role.ID,
@@ -195,13 +195,11 @@ func (r *UserRepository) GetAll() ([]User, error) {
 			return nil, err
 		}
 
-		// Convert roleID back to *int if needed
 		if roleID.Valid {
 			roleIDInt := int(roleID.Int64)
 			user.RoleID = &roleIDInt
 		}
 
-		// Only set Role if we have a valid role
 		if role.ID != 0 {
 			user.Role = &Role{
 				ID:          role.ID,

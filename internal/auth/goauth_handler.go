@@ -4,6 +4,7 @@ package auth
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/go-playground/validator/v10"
@@ -161,8 +162,34 @@ func (h *Handler) RefreshToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
-	user := r.Context().Value("user").(*User)
-	respondJSON(w, http.StatusOK, user)
+	userIDVal := r.Context().Value("user_id")
+	if userIDVal == nil {
+		respondError(w, http.StatusUnauthorized, "User not authenticated")
+		return
+	}
+
+	userID, ok := userIDVal.(string)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Invalid user ID")
+		return
+	}
+
+	user, err := h.service.GetByUserID(userID)
+	if err != nil {
+		log.Printf("Error getting current user: %v", err)
+		respondError(w, http.StatusInternalServerError, "Failed to get user information")
+		return
+	}
+
+	if user == nil {
+		respondError(w, http.StatusNotFound, "User not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "User retrieved successfully",
+		"user":    user,
+	})
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {

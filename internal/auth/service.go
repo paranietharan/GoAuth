@@ -340,3 +340,11 @@ func (s *Service) Delete(userID string) error {
 
 	return nil
 }
+
+func (s *Service) GetByUserID(userID string) (*User, error) {
+	user, err := s.userRepo.GetByID(userID)
+	if err != nil {
+		return &User{}, fmt.Errorf("user not found")
+	}
+	return user, nil
+}

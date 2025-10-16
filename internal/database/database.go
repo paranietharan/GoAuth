@@ -277,14 +277,14 @@ func SeedDatabase(db *sql.DB) error {
 
 		_, err = tx.Exec(
 			"INSERT INTO users (id, email, password_hash, first_name, last_name, role_id, is_verified, is_active) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-			userUUID, // Use UUID as ID
+			userUUID,
 			user.email,
 			string(hashedPassword),
 			user.firstName,
 			user.lastName,
 			roleID,
-			true, // is_verified
-			true, // is_active
+			true,
+			true,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to seed user %s: %w", user.email, err)
