@@ -178,7 +178,12 @@ func (h *Handler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(int)
+	userIDVal := r.Context().Value("user_id")
+	userID, ok := userIDVal.(int)
+	if userIDVal == nil || !ok {
+		http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
 
 	var req struct {
 		RefreshToken string `json:"refresh_token"`

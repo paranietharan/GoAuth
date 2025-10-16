@@ -4,7 +4,6 @@ import (
 	"GoAuth/internal/email"
 	"context"
 	"log"
-	"sync"
 )
 
 type EmailJob struct {
@@ -15,7 +14,6 @@ type EmailJob struct {
 
 type JobQueue struct {
 	jobs chan *EmailJob
-	mu   sync.Mutex
 }
 
 func NewJobQueue(capacity int) *JobQueue {
