@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -48,17 +49,39 @@ func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Add user info to context
-			ctx := context.WithValue(r.Context(), "user_id", int(claims["user_id"].(float64)))
-			ctx = context.WithValue(ctx, "email", claims["email"].(string))
-			ctx = context.WithValue(ctx, "role", claims["role"].(string))
+			log.Printf("Claims: %+v", claims)
+
+			userID, _ := claims["user_id"].(string)
+			if !ok || userID == "" {
+				http.Error(w, `{"error":"Invalid or missing user_id claim"}`, http.StatusUnauthorized)
+				return
+			}
+
+			email, ok := claims["email"].(string)
+			if !ok || email == "" {
+				http.Error(w, `{"error":"Invalid or missing email claim"}`, http.StatusUnauthorized)
+				return
+			}
+
+			var roleName string
+			switch v := claims["role"].(type) {
+			case string:
+				roleName = v
+			case map[string]interface{}:
+				if n, ok := v["name"].(string); ok {
+					roleName = n
+				}
+			}
+
+			ctx := context.WithValue(r.Context(), "user_id", userID)
+			ctx = context.WithValue(ctx, "email", email)
+			ctx = context.WithValue(ctx, "role", roleName)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-// LoggingMiddleware logs HTTP requests
 func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -70,7 +93,6 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// CORSMiddleware adds CORS headers
 func CORSMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -86,7 +108,6 @@ func CORSMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// RateLimitMiddleware implements rate limiting per IP
 type visitor struct {
 	limiter  *rate.Limiter
 	lastSeen time.Time
@@ -149,4 +170,52 @@ func getIP(r *http.Request) string {
 		return strings.Split(forwarded, ",")[0]
 	}
 	return r.RemoteAddr
+}
+
+func RoleMiddleware(requiredRole string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userRole := r.Context().Value("role")
+			if userRole == nil {
+				http.Error(w, `{"error":"Authorization required"}`, http.StatusUnauthorized)
+				return
+			}
+
+			if userRole.(string) != requiredRole && userRole.(string) != "admin" {
+				http.Error(w, `{"error":"Insufficient permissions"}`, http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func PermissionMiddleware(db *sql.DB, requiredPermission string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID := r.Context().Value("user_id")
+			if userID == nil {
+				http.Error(w, `{"error":"Authorization required"}`, http.StatusUnauthorized)
+				return
+			}
+
+			var hasPermission bool
+			query := `
+				SELECT EXISTS (
+					SELECT 1 FROM role_permissions rp
+					INNER JOIN users u ON u.role_id = rp.role_id
+					INNER JOIN permissions p ON p.id = rp.permission_id
+					WHERE u.id = $1 AND p.name = $2
+				)
+			`
+			err := db.QueryRow(query, userID, requiredPermission).Scan(&hasPermission)
+			if err != nil || !hasPermission {
+				http.Error(w, `{"error":"Insufficient permissions"}`, http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
