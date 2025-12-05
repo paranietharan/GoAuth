@@ -45,7 +45,7 @@ func main() {
 
 	// Initialize job queue for async operations
 	jobQueue := worker.NewJobQueue(100)
-	emailWorker := worker.NewEmailWorker(emailService, jobQueue)
+	emailWorker := worker.NewEmailWorker(emailService, jobQueue, cfg.IsLocalDevWithoutSMTP)
 
 	// Start worker pool
 	ctx, cancel := context.WithCancel(context.Background())

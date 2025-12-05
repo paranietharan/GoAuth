@@ -31,14 +31,16 @@ func (q *JobQueue) Pop() *EmailJob {
 }
 
 type EmailWorker struct {
-	emailService *email.Service
-	jobQueue     *JobQueue
+	emailService          *email.Service
+	jobQueue              *JobQueue
+	isLocalDevWithoutSmtp bool
 }
 
-func NewEmailWorker(emailService *email.Service, jobQueue *JobQueue) *EmailWorker {
+func NewEmailWorker(emailService *email.Service, jobQueue *JobQueue, isLocalDevWithoutSmtp bool) *EmailWorker {
 	return &EmailWorker{
-		emailService: emailService,
-		jobQueue:     jobQueue,
+		emailService:          emailService,
+		jobQueue:              jobQueue,
+		isLocalDevWithoutSmtp: isLocalDevWithoutSmtp,
 	}
 }
 
@@ -64,6 +66,11 @@ func (w *EmailWorker) worker(ctx context.Context, id int) {
 
 func (w *EmailWorker) processJob(job *EmailJob, workerID int) {
 	log.Printf("Worker %d: Sending email to %s", workerID, job.To)
+
+	if w.isLocalDevWithoutSmtp {
+		log.Printf("Worker %d: [DEV MODE] Email to %s: Subject: %s, Body: %s", workerID, job.To, job.Subject, job.Body)
+		return
+	}
 
 	if err := w.emailService.SendEmail(job.To, job.Subject, job.Body); err != nil {
 		log.Printf("Worker %d: Failed to send email to %s: %v", workerID, job.To, err)

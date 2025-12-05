@@ -11,11 +11,12 @@ type Config struct {
 	JWTSecret   string
 
 	// SMTP
-	SMTPHost     string
-	SMTPPort     string
-	SMTPUser     string
-	SMTPPassword string
-	SMTPFrom     string
+	IsLocalDevWithoutSMTP bool
+	SMTPHost              string
+	SMTPPort              string
+	SMTPUser              string
+	SMTPPassword          string
+	SMTPFrom              string
 
 	RUN_Drop_Migrations bool
 	RUN_Migrations      bool
@@ -24,14 +25,16 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:         getEnv("PORT", "8080"),
-		DatabaseURL:  getEnv("DATABASE_URL", "postgres://postgres:root@localhost:5432/GoAuth?sslmode=disable"),
-		JWTSecret:    getEnv("JWT_SECRET", "your-secret-key-change-this"),
-		SMTPHost:     getEnv("SMTP_HOST", "smtp.gmail.com"),
-		SMTPPort:     getEnv("SMTP_PORT", "587"),
-		SMTPUser:     getEnv("SMTP_USER", "your-email@gmail.com"),
-		SMTPPassword: getEnv("SMTP_PASSWORD", "your-app-password"),
-		SMTPFrom:     getEnv("SMTP_FROM", "noreply@GoAuth.com"),
+		Port:        getEnv("PORT", "8080"),
+		DatabaseURL: getEnv("DATABASE_URL", "postgres://postgres:root@localhost:5432/GoAuth?sslmode=disable"),
+		JWTSecret:   getEnv("JWT_SECRET", "your-secret-key-change-this"),
+
+		IsLocalDevWithoutSMTP: getEnvBool("IS_LOCAL_DEV_WITHOUT_SMTP", true),
+		SMTPHost:              getEnv("SMTP_HOST", "smtp.gmail.com"),
+		SMTPPort:              getEnv("SMTP_PORT", "587"),
+		SMTPUser:              getEnv("SMTP_USER", "your-email@gmail.com"),
+		SMTPPassword:          getEnv("SMTP_PASSWORD", "your-app-password"),
+		SMTPFrom:              getEnv("SMTP_FROM", "noreply@GoAuth.com"),
 
 		RUN_Migrations:      getEnvBool("RUN_MIGRATIONS", true),
 		RUN_Drop_Migrations: getEnvBool("RUN_DROP_MIGRATIONS", true),
