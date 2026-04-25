@@ -45,7 +45,14 @@ func New(authHandler AuthHandler, authMiddleware *middleware.AuthMiddleware) *gi
 		protected.POST("/revoke-session", authHandler.RevokeSession)
 	}
 
+	// 1. Admin Only
 	r.GET("/admin-only", authMiddleware.RequireAuth(), middleware.RequireRoles(model.RoleAdmin), handler.AdminOnly)
+	// 2. User and Admin (Both can access)
+	r.GET("/user-admin", authMiddleware.RequireAuth(), middleware.RequireRoles(model.RoleUser, model.RoleAdmin), handler.UserAdmin)
+	// 3. Particular User and Admin (Ownership + Admin Override)
+	r.GET("/user-details/:id", authMiddleware.RequireAuth(), handler.UserDetails)
+	// 4. Particular User Only (Strict Ownership - No Admin)
+	r.GET("/user-private/:id", authMiddleware.RequireAuth(), handler.UserPrivateDetails)
 
 	return r
 }
