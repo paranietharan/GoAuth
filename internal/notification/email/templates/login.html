@@ -1,0 +1,12 @@
+{{template "base" .}}
+{{define "title"}}New Login Detected{{end}}
+{{define "content"}}
+    <h2>Security Alert: New Login</h2>
+    <p>We detected a new login to your GoAuth account ({{.Email}}).</p>
+    <div style="background: #f9fafb; padding: 15px; border-radius: 6px; margin: 20px 0;">
+        <p style="margin: 5px 0;"><strong>Time:</strong> {{.Timestamp}}</p>
+        <p style="margin: 5px 0;"><strong>IP Address:</strong> {{.IPAddress}}</p>
+        <p style="margin: 5px 0;"><strong>Device:</strong> {{.DeviceInfo}}</p>
+    </div>
+    <p>If this was you, you can safely ignore this email. If you don't recognize this activity, please reset your password immediately.</p>
+{{end}}
