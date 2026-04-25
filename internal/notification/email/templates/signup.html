@@ -1,0 +1,11 @@
+{{template "base" .}}
+{{define "title"}}Welcome to GoAuth{{end}}
+{{define "content"}}
+    <h2>Welcome!</h2>
+    <p>Thank you for signing up for GoAuth. We're excited to have you on board.</p>
+    <p>To get started, please verify your email address using the code below:</p>
+    <div style="background: #f3f4f6; padding: 20px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 4px; border-radius: 8px;">
+        {{.OTP}}
+    </div>
+    <p>This code will expire in {{.ExpiryMinutes}} minutes.</p>
+{{end}}

@@ -9,99 +9,102 @@ import (
 	"syscall"
 	"time"
 
-	"GoAuth/internal/auth"
 	"GoAuth/internal/config"
 	"GoAuth/internal/database"
-	"GoAuth/internal/email"
+	"GoAuth/internal/handler"
 	"GoAuth/internal/middleware"
+	"GoAuth/internal/notification/email"
+	"GoAuth/internal/repository"
+	"GoAuth/internal/router"
+	"GoAuth/internal/service"
 	"GoAuth/internal/worker"
 
-	"github.com/gorilla/mux"
 	_ "github.com/lib/pq"
 )
+
+type appLogger struct{}
+
+func (l *appLogger) InfoContext(ctx context.Context, msg string, args ...any)  { log.Printf("INFO: "+msg, args...) }
+func (l *appLogger) WarnContext(ctx context.Context, msg string, args ...any)  { log.Printf("WARN: "+msg, args...) }
+func (l *appLogger) ErrorContext(ctx context.Context, msg string, args ...any) { log.Printf("ERROR: "+msg, args...) }
 
 func main() {
 	cfg := config.Load()
 
+	// 1. Database & Redis
 	db, err := database.NewPostgresDB(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
 
-	if cfg.RUN_Migrations {
-		if err := database.RunMigrations(db, cfg.RUN_Drop_Migrations); err != nil {
-			log.Fatalf("Failed to run migrations: %v", err)
-		}
+	redisClient := database.NewRedisClient(cfg.RedisAddr, cfg.RedisPass, cfg.RedisDB)
+	if err := redisClient.Ping(context.Background()).Err(); err != nil {
+		log.Fatalf("Failed to connect to redis: %v", err)
 	}
 
-	if cfg.SEED_DB {
-		if err := database.SeedDatabase(db); err != nil {
-			log.Fatalf("Failed to seed database: %v", err)
-		}
+	// 2. Email System Initialization
+	var provider email.Provider
+	if cfg.IsLocalDevWithoutSMTP {
+		provider = &email.MockProvider{}
+	} else {
+		provider = email.NewSMTPProvider(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPassword, cfg.SMTPFrom)
 	}
 
-	emailService := email.NewService(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPassword, cfg.SMTPFrom)
+	renderer, err := email.NewRenderer("internal/notification/email/templates")
+	if err != nil {
+		log.Fatalf("Failed to initialize email renderer: %v", err)
+	}
 
-	// Initialize job queue for async operations
 	jobQueue := worker.NewJobQueue(100)
-	emailWorker := worker.NewEmailWorker(emailService, jobQueue, cfg.IsLocalDevWithoutSMTP)
+	emailSender := email.NewService(provider, renderer, jobQueue)
 
-	// Start worker pool
+	// 3. Worker Pool Initialization
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	emailWorker.Start(ctx, 5) // 5 concurrent workers
 
-	// Initialize repositories
-	userRepo := auth.NewUserRepository(db)
-	tokenRepo := auth.NewTokenRepository(db)
+	emailWorker := worker.NewEmailWorker(provider, jobQueue)
+	emailWorker.Start(ctx, 5)
 
-	// Initialize services
-	authService := auth.NewService(userRepo, tokenRepo, emailService, jobQueue, cfg.JWTSecret)
+	// 4. Repositories
+	userRepo := repository.NewPostgresUserRepository(db)
+	sessionRepo := repository.NewPostgresSessionRepository(db)
+	otpRepo := repository.NewRedisOTPRepository(redisClient)
 
-	// Initialize handlers
-	authHandler := auth.NewHandler(authService)
+	// 5. Services
+	authService := service.NewAuthService(
+		userRepo,
+		sessionRepo,
+		otpRepo,
+		emailSender,
+		service.AuthConfig{
+			JWTSecret:            cfg.JWTSecret,
+			BcryptCost:           cfg.BcryptCost,
+			AccessTokenTTL:       time.Duration(cfg.AccessTokenTTLMinutes) * time.Minute,
+			RefreshTokenTTL:      time.Duration(cfg.RefreshTokenTTLDays) * 24 * time.Hour,
+			EmailVerificationTTL: cfg.EmailVerificationTTL,
+			ForgotPasswordOTPTTL: cfg.ForgotPasswordOTPTTL,
+			ResetTempTokenTTL:    cfg.ResetTempTokenTTL,
+		},
+		&appLogger{},
+	)
 
-	// Setup router
-	r := mux.NewRouter()
+	// 6. Middleware & Handlers
+	authMiddleware := middleware.NewAuthMiddleware(cfg.JWTSecret, sessionRepo)
+	authHandler := handler.NewAuthHandler(authService)
 
-	// Public routes
-	r.HandleFunc("/api/auth/register", authHandler.Register).Methods("POST")
-	r.HandleFunc("/api/auth/login", authHandler.Login).Methods("POST")
-	r.HandleFunc("/api/auth/verify-email", authHandler.VerifyEmail).Methods("GET")
-	r.HandleFunc("/api/auth/forgot-password", authHandler.ForgotPassword).Methods("POST")
-	r.HandleFunc("/api/auth/reset-password", authHandler.ResetPassword).Methods("POST")
-	r.HandleFunc("/api/auth/refresh", authHandler.RefreshToken).Methods("POST")
+	// 7. Router
+	engine := router.New(authHandler, authMiddleware)
 
-	// Protected routes
-	protected := r.PathPrefix("/api").Subrouter()
-	protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
-	protected.HandleFunc("/auth/me", authHandler.GetCurrentUser).Methods("GET")
-	protected.HandleFunc("/auth/logout", authHandler.Logout).Methods("POST")
-	protected.HandleFunc("/auth/change-password", authHandler.ChangePassword).Methods("POST")
-
-	// Admin-only routes
-	admin := r.PathPrefix("/api/admin").Subrouter()
-	admin.Use(middleware.AuthMiddleware(cfg.JWTSecret))
-	admin.Use(middleware.RoleMiddleware("admin"))
-	admin.HandleFunc("/users", authHandler.GetAllUsers).Methods("GET")
-	admin.HandleFunc("/users/{id}", authHandler.DeleteUser).Methods("DELETE")
-
-	// Add middleware
-	r.Use(middleware.LoggingMiddleware)
-	r.Use(middleware.CORSMiddleware)
-	r.Use(middleware.RateLimitMiddleware)
-
-	// Setup HTTP server
+	// 8. Server setup
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
-		Handler:      r,
+		Handler:      engine,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
-	// Start server in goroutine
 	go func() {
 		log.Printf("Starting GoAuth server on port %s", cfg.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -109,20 +112,16 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
 	log.Println("Shutting down server...")
-
-	// Graceful shutdown
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
-
 	log.Println("Server exited")
 }

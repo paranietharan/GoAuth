@@ -1,0 +1,8 @@
+{{template "base" .}}
+{{define "title"}}Email Verified{{end}}
+{{define "content"}}
+    <h2>Email Successfully Verified</h2>
+    <p>Hi {{.Email}},</p>
+    <p>Your email address has been successfully verified. You now have full access to your account.</p>
+    <a href="{{.LoginLink}}" class="button">Log In Now</a>
+{{end}}

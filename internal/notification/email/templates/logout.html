@@ -1,0 +1,11 @@
+{{template "base" .}}
+{{define "title"}}Session Ended{{end}}
+{{define "content"}}
+    <h2>Session Signed Out</h2>
+    <p>The session for your account ({{.Email}}) has been signed out or revoked.</p>
+    <div style="background: #f9fafb; padding: 15px; border-radius: 6px; margin: 20px 0;">
+        <p style="margin: 5px 0;"><strong>Time:</strong> {{.Timestamp}}</p>
+        <p style="margin: 5px 0;"><strong>Reason:</strong> {{.Reason}}</p>
+    </div>
+    <p>If you didn't perform this action, your account may be compromised.</p>
+{{end}}
