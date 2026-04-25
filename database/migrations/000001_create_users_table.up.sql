@@ -3,7 +3,7 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 DO $$ BEGIN
-    CREATE TYPE user_role AS ENUM ('USER', 'ADMIN', 'OWNER');
+    CREATE TYPE user_role AS ENUM ('USER', 'ADMIN');
 EXCEPTION
     WHEN duplicate_object THEN null;
 END $$;

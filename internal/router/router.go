@@ -45,9 +45,7 @@ func New(authHandler AuthHandler, authMiddleware *middleware.AuthMiddleware) *gi
 		protected.POST("/revoke-session", authHandler.RevokeSession)
 	}
 
-	r.GET("/admin-only", authMiddleware.RequireAuth(), middleware.RequireRoles(model.RoleAdmin, model.RoleOwner), handler.AdminOnly)
-	r.GET("/owner-only", authMiddleware.RequireAuth(), middleware.RequireRoles(model.RoleOwner), handler.OwnerOnly)
-	r.GET("/admin-owner", authMiddleware.RequireAuth(), middleware.RequireRoles(model.RoleAdmin, model.RoleOwner), handler.AdminOwner)
+	r.GET("/admin-only", authMiddleware.RequireAuth(), middleware.RequireRoles(model.RoleAdmin), handler.AdminOnly)
 
 	return r
 }
