@@ -175,7 +175,7 @@ A standard `Makefile` is provided for all development tasks:
 
 ## 📖 API Documentation & `curl` Examples
 
-A full OpenAPI 3.0 specification is available at [`docs/openapi.yaml`](docs/openapi.yaml).
+A full OpenAPI 3.0 specification is available at [`docs/openapi.yaml`](docs/openapi.yaml). For an extensive testing walkthrough covering all endpoints, payloads, status codes, and security attack simulations, refer to the [**API Testing Guide**](docs/API_TESTING.md).
 
 ### 1. Register a New User
 ```bash
@@ -246,6 +246,7 @@ GoAuth/
 │   └── runner/                    # Migration engine
 ├── docs/
 │   ├── openapi.yaml               # OpenAPI 3.0 specification
+│   ├── API_TESTING.md             # Complete endpoint testing guide with curl commands
 │   ├── ENV.md                     # Complete environment variables guide
 │   └── MIGRATIONS.md              # Database migration documentation
 ├── examples/monolith/main.go      # Reusable monolith integration example
