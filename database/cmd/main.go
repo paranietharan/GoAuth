@@ -16,7 +16,10 @@ func main() {
 	seedCmd := flag.Bool("seed", false, "Run database seeds")
 	flag.Parse()
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Configuration error: %v", err)
+	}
 
 	db, err := database.NewPostgresDB(cfg.DatabaseURL)
 	if err != nil {

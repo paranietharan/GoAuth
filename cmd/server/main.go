@@ -29,7 +29,10 @@ func (l *appLogger) WarnContext(ctx context.Context, msg string, args ...any)  {
 func (l *appLogger) ErrorContext(ctx context.Context, msg string, args ...any) { log.Printf("ERROR: "+msg, args...) }
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Configuration error: %v", err)
+	}
 
 	db, err := database.NewPostgresDB(cfg.DatabaseURL)
 	if err != nil {

@@ -28,7 +28,10 @@ func NewSMTPProvider(host, port, username, password, from string) *SMTPProvider 
 }
 
 func (p *SMTPProvider) Send(to, subject, body string) error {
-	auth := smtp.PlainAuth("", p.username, p.password, p.host)
+	var auth smtp.Auth
+	if p.username != "" || p.password != "" {
+		auth = smtp.PlainAuth("", p.username, p.password, p.host)
+	}
 
 	msg := []byte(fmt.Sprintf("From: %s\r\n"+
 		"To: %s\r\n"+

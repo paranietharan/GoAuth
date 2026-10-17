@@ -110,13 +110,15 @@ This document tracks all missing features, security enhancements, testing requir
     - Detected token reuse attacks (token hash, user ID, IP).
     - Role elevation / admin actions.
 
-- [ ] **3.4 Startup Configuration Validation**
-  - [ ] Add `Validate()` method in `internal/config/config.go`.
-  - [ ] Fail fast on startup if:
-    - `JWT_SECRET` is left as default `"your-secret-key-change-this"` in non-dev environments or length < 32 chars.
+- [x] **3.4 Startup Configuration Validation**
+  - [x] Add `validate()` method in `internal/config/config.go`.
+  - [x] Fail fast on startup with consolidated error reporting if:
     - `DATABASE_URL` is empty.
     - `REDIS_ADDR` is empty.
-    - TTL values are negative or zero.
+    - `JWT_SECRET` is empty or shorter than 32 characters.
+    - `SMTP_HOST`, `SMTP_PORT`, or `SMTP_FROM` are empty when `IS_LOCAL_DEV_WITHOUT_SMTP` is false.
+    - TTL values are negative or zero, or numeric parameters fail parsing.
+  - [x] Unit tested in `internal/config/config_test.go`.
 
 - [ ] **3.5 Graceful Shutdown Coordination**
   - [ ] Use `sync.WaitGroup` to coordinate shutdown between HTTP server and async email worker pool in `main.go`.
@@ -143,16 +145,17 @@ This document tracks all missing features, security enhancements, testing requir
 
 ### Phase 5: Containerization & Local Development (P1)
 
-- [ ] **5.1 Production Multi-Stage Dockerfile**
-  - [ ] Build stage with Go 1.23+ Alpine.
-  - [ ] Final lean runtime stage using `gcr.io/distroless/static-debian12` or `alpine:latest`.
-  - [ ] Non-root user execution, CA certificates for SMTP TLS, template assets included.
-- [ ] **5.2 Docker Compose (`compose.yaml`)**
-  - [ ] Services:
-    - `postgres`: PostgreSQL 16 with persistent volume and health check.
-    - `redis`: Redis 7 with health check.
-    - `mailpit`: Lightweight local SMTP testing server with web UI on port 8025.
-    - `api`: GoAuth application container waiting for healthy postgres & redis.
+- [x] **5.1 Production Multi-Stage Dockerfile**
+  - [x] Build stage with Go Alpine (compiles `server` and `migrate`).
+  - [x] Lean runtime stage using `alpine:latest`.
+  - [x] CA certificates, email templates, migrations, and entrypoint included.
+- [x] **5.2 Docker Compose (`compose.yaml`)**
+  - [x] Services:
+    - `postgres`: PostgreSQL 16 with health check and persistent volume.
+    - `redis`: Redis 7 with health check and persistent volume.
+    - `mailpit`: Local SMTP and web UI (`axllent/mailpit:latest`).
+    - `api`: GoAuth API with automatic migration execution and healthy dependency checks.
+  - [x] Strictly loads all values from `.env` without default fallback values in compose.
 - [ ] **5.3 Developer Makefile**
   - [ ] Targets: `build`, `run`, `migrate-up`, `migrate-down`, `seed`, `test`, `test-race`, `test-integration`, `lint`, `docker-up`, `docker-down`.
 
