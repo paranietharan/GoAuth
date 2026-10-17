@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -19,6 +20,8 @@ func NewPostgresDB(databaseURL string) (*sql.DB, error) {
 
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(time.Hour)
+	db.SetConnMaxIdleTime(15 * time.Minute)
 
 	return db, nil
 }

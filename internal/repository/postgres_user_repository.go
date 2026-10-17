@@ -120,6 +120,99 @@ func (r *PostgresUserRepository) UpdatePasswordHash(ctx context.Context, userID 
 	return nil
 }
 
+func (r *PostgresUserRepository) SetIsActive(ctx context.Context, userID uuid.UUID, isActive bool) error {
+	const query = `UPDATE users SET is_active = $2, updated_at = NOW() WHERE id = $1`
+	res, err := r.db.ExecContext(ctx, query, userID, isActive)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *PostgresUserRepository) ListUsers(ctx context.Context, limit, offset int) ([]model.User, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	query := `
+		SELECT id, email, password_hash, role, is_active, is_email_verified,
+			email_verified_at, last_login_at, last_login_ip::text,
+			last_login_user_agent, last_login_device, created_at, updated_at
+		FROM users
+		ORDER BY created_at DESC
+		LIMIT $1 OFFSET $2
+	`
+	rows, err := r.db.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []model.User
+	for rows.Next() {
+		user := model.User{}
+		var emailVerifiedAt sql.NullTime
+		var lastLoginAt sql.NullTime
+		var lastLoginIP sql.NullString
+		var lastLoginUA sql.NullString
+		var lastLoginDevice sql.NullString
+		var role string
+
+		err := rows.Scan(
+			&user.ID,
+			&user.Email,
+			&user.PasswordHash,
+			&role,
+			&user.IsActive,
+			&user.IsEmailVerified,
+			&emailVerifiedAt,
+			&lastLoginAt,
+			&lastLoginIP,
+			&lastLoginUA,
+			&lastLoginDevice,
+			&user.CreatedAt,
+			&user.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		user.Role = model.Role(role)
+		if emailVerifiedAt.Valid {
+			user.EmailVerifiedAt = &emailVerifiedAt.Time
+		}
+		if lastLoginAt.Valid {
+			user.LastLoginAt = &lastLoginAt.Time
+		}
+		if lastLoginIP.Valid {
+			v := lastLoginIP.String
+			user.LastLoginIP = &v
+		}
+		if lastLoginUA.Valid {
+			v := lastLoginUA.String
+			user.LastLoginUserAgent = &v
+		}
+		if lastLoginDevice.Valid {
+			v := lastLoginDevice.String
+			user.LastLoginDevice = &v
+		}
+		users = append(users, user)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
 func (r *PostgresUserRepository) scanOne(ctx context.Context, query string, arg any) (*model.User, error) {
 	user := &model.User{}
 	var emailVerifiedAt sql.NullTime

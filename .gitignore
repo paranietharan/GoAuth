@@ -1,2 +1,26 @@
+# IDE & Editor
 .idea
+.vscode
+*.swp
+*.swo
+
+# Environment Variables
 .env
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Binaries & Builds
+bin/
+server
+migrate
+/monolith
+*.exe
+*.test
+
+# Coverage & Test Artifacts
+*.out
+coverage.html
+test.log
+scratch/

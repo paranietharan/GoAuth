@@ -35,6 +35,8 @@ type Config struct {
 	SMTPUser              string
 	SMTPPassword          string
 	SMTPFrom              string
+
+	CORSAllowedOrigins []string
 }
 
 func Load() (*Config, error) {
@@ -106,6 +108,7 @@ func Load() (*Config, error) {
 		SMTPUser:              os.Getenv("SMTP_USER"),
 		SMTPPassword:          os.Getenv("SMTP_PASSWORD"),
 		SMTPFrom:              strings.TrimSpace(os.Getenv("SMTP_FROM")),
+		CORSAllowedOrigins:    parseCommaSeparated(getEnv("CORS_ALLOWED_ORIGINS", "*")),
 	}
 
 	if valErrs := cfg.validate(); len(valErrs) > 0 {
@@ -208,4 +211,17 @@ func getEnvInt(key string, defaultValue int) (int, error) {
 		return 0, fmt.Errorf("invalid integer value for %s: %q", key, value)
 	}
 	return n, nil
+}
+
+func parseCommaSeparated(value string) []string {
+	var result []string
+	for _, item := range strings.Split(value, ",") {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	if len(result) == 0 {
+		return []string{"*"}
+	}
+	return result
 }

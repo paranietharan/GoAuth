@@ -21,8 +21,10 @@ type UserRepository interface {
 	Create(ctx context.Context, user *model.User) error
 	GetByEmail(ctx context.Context, email string) (*model.User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*model.User, error)
+	ListUsers(ctx context.Context, limit, offset int) ([]model.User, error)
 	MarkEmailVerified(ctx context.Context, userID uuid.UUID, verifiedAt time.Time) error
 	UpdatePasswordHash(ctx context.Context, userID uuid.UUID, passwordHash string) error
+	SetIsActive(ctx context.Context, userID uuid.UUID, isActive bool) error
 	IsEmailTaken(ctx context.Context, email string) (bool, error)
 }
 
@@ -36,6 +38,8 @@ type SessionRepository interface {
 	RevokeByID(ctx context.Context, sessionID uuid.UUID) error
 	RevokeByIDForUser(ctx context.Context, sessionID, userID uuid.UUID) (bool, error)
 	RevokeAllByUserID(ctx context.Context, userID uuid.UUID) error
+	RevokeAllByFamilyID(ctx context.Context, familyID uuid.UUID) error
+	RotateSession(ctx context.Context, oldSessionID uuid.UUID, newSession *model.Session) (bool, error)
 }
 
 type OTPRepository interface {

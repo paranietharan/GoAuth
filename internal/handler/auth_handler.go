@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"net/http"
+	"strconv"
 	"strings"
 
 	"GoAuth/internal/dto"
@@ -125,6 +127,115 @@ func (h *AuthHandler) RevokeSession(c *gin.Context) {
 	c.JSON(200, dto.MessageResponse{Message: "session revoked"})
 }
 
+func (h *AuthHandler) RevokeSessionByID(c *gin.Context) {
+	principal, appErr := principalFromContext(c)
+	if appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	sessionID := c.Param("id")
+	if sessionID == "" {
+		apperrors.Write(c, apperrors.ErrValidationFailed)
+		return
+	}
+	if appErr := h.authService.RevokeSession(c.Request.Context(), principal, sessionID); appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	c.JSON(http.StatusOK, dto.MessageResponse{Message: "session revoked"})
+}
+
+func (h *AuthHandler) LogoutAll(c *gin.Context) {
+	principal, appErr := principalFromContext(c)
+	if appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	if appErr := h.authService.LogoutAll(c.Request.Context(), principal); appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	c.JSON(http.StatusOK, dto.MessageResponse{Message: "logged out from all sessions"})
+}
+
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	principal, appErr := principalFromContext(c)
+	if appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	var req dto.ChangePasswordRequest
+	if appErr := h.bindAndValidate(c, &req); appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	if appErr := h.authService.ChangePassword(c.Request.Context(), principal, req); appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	c.JSON(http.StatusOK, dto.MessageResponse{Message: "password changed successfully"})
+}
+
+func (h *AuthHandler) GetMe(c *gin.Context) {
+	principal, appErr := principalFromContext(c)
+	if appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	user, appErr := h.authService.GetMe(c.Request.Context(), principal)
+	if appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	c.JSON(http.StatusOK, user)
+}
+
+func (h *AuthHandler) ListUsers(c *gin.Context) {
+	limit := 20
+	offset := 0
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+			if limit > 100 {
+				limit = 100
+			}
+		}
+	}
+	if o := c.Query("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+	users, appErr := h.authService.ListUsers(c.Request.Context(), limit, offset)
+	if appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	c.JSON(http.StatusOK, users)
+}
+
+func (h *AuthHandler) UpdateUserStatus(c *gin.Context) {
+	userID := c.Param("id")
+	if userID == "" {
+		apperrors.Write(c, apperrors.ErrValidationFailed)
+		return
+	}
+	var req dto.UpdateUserStatusRequest
+	if appErr := h.bindAndValidate(c, &req); appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	if req.IsActive == nil {
+		apperrors.Write(c, apperrors.ErrValidationFailed)
+		return
+	}
+	if appErr := h.authService.UpdateUserStatus(c.Request.Context(), userID, *req.IsActive); appErr != nil {
+		apperrors.Write(c, appErr)
+		return
+	}
+	c.JSON(http.StatusOK, dto.MessageResponse{Message: "user status updated"})
+}
+
 func (h *AuthHandler) ForgotPassword(c *gin.Context) {
 	var req dto.ForgotPasswordRequest
 	if appErr := h.bindAndValidate(c, &req); appErr != nil {
@@ -210,7 +321,10 @@ func principalFromContext(c *gin.Context) (service.AuthPrincipal, *apperrors.App
 		return service.AuthPrincipal{}, apperrors.ErrUnauthorized
 	}
 
-	return service.AuthPrincipal{UserID: uid, Role: modelRole, SessionID: sid}, nil
+	email, _ := c.Get("user_email")
+	userEmail, _ := email.(string)
+
+	return service.AuthPrincipal{UserID: uid, Email: userEmail, Role: modelRole, SessionID: sid}, nil
 }
 
 func deriveDevice(userAgent string) string {

@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"GoAuth/internal/config"
 	"GoAuth/internal/database"
 	"GoAuth/internal/handler"
+	"GoAuth/internal/logger"
 	"GoAuth/internal/middleware"
 	"GoAuth/internal/notification/email"
 	"GoAuth/internal/repository"
@@ -22,28 +25,28 @@ import (
 	_ "github.com/lib/pq"
 )
 
-type appLogger struct{}
-
-func (l *appLogger) InfoContext(ctx context.Context, msg string, args ...any)  { log.Printf("INFO: "+msg, args...) }
-func (l *appLogger) WarnContext(ctx context.Context, msg string, args ...any)  { log.Printf("WARN: "+msg, args...) }
-func (l *appLogger) ErrorContext(ctx context.Context, msg string, args ...any) { log.Printf("ERROR: "+msg, args...) }
-
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Configuration error: %v", err)
 	}
 
+	appLogger := logger.New(os.Getenv("ENV") == "production")
+	slog.SetDefault(appLogger)
+
 	db, err := database.NewPostgresDB(cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		appLogger.Error("Failed to connect to database", slog.Any("error", err))
+		os.Exit(1)
 	}
 	defer db.Close()
 
 	redisClient := database.NewRedisClient(cfg.RedisAddr, cfg.RedisPass, cfg.RedisDB)
 	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		log.Fatalf("Failed to connect to redis: %v", err)
+		appLogger.Error("Failed to connect to redis", slog.Any("error", err))
+		os.Exit(1)
 	}
+	defer redisClient.Close()
 
 	var provider email.Provider
 	if cfg.IsLocalDevWithoutSMTP {
@@ -54,7 +57,8 @@ func main() {
 
 	renderer, err := email.NewRenderer("internal/notification/email/templates")
 	if err != nil {
-		log.Fatalf("Failed to initialize email renderer: %v", err)
+		appLogger.Error("Failed to initialize email renderer", slog.Any("error", err))
+		os.Exit(1)
 	}
 
 	jobQueue := worker.NewJobQueue(100)
@@ -63,8 +67,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	var workerWg sync.WaitGroup
 	emailWorker := worker.NewEmailWorker(provider, jobQueue)
-	emailWorker.Start(ctx, 5)
+	emailWorker.Start(ctx, 5, &workerWg)
 
 	userRepo := repository.NewPostgresUserRepository(db)
 	sessionRepo := repository.NewPostgresSessionRepository(db)
@@ -84,13 +89,22 @@ func main() {
 			ForgotPasswordOTPTTL: cfg.ForgotPasswordOTPTTL,
 			ResetTempTokenTTL:    cfg.ResetTempTokenTTL,
 		},
-		&appLogger{},
+		appLogger,
 	)
 
-	authMiddleware := middleware.NewAuthMiddleware(cfg.JWTSecret, sessionRepo)
+	authMiddleware := middleware.NewAuthMiddleware(cfg.JWTSecret, sessionRepo, userRepo)
 	authHandler := handler.NewAuthHandler(authService)
+	healthHandler := handler.NewHealthHandler(db, redisClient)
+	rateLimiter := middleware.NewRateLimiter(redisClient)
 
-	engine := router.New(authHandler, authMiddleware)
+	engine := router.New(router.Config{
+		AuthHandler:    authHandler,
+		HealthHandler:  healthHandler,
+		AuthMiddleware: authMiddleware,
+		RateLimiter:    rateLimiter,
+		CORSConfig:     middleware.DefaultCORSConfig(cfg.CORSAllowedOrigins),
+		Logger:         appLogger,
+	})
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
@@ -101,9 +115,10 @@ func main() {
 	}
 
 	go func() {
-		log.Printf("Starting GoAuth server on port %s", cfg.Port)
+		appLogger.Info("Starting GoAuth server", slog.String("port", cfg.Port))
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			appLogger.Error("Server listen failed", slog.Any("error", err))
+			os.Exit(1)
 		}
 	}()
 
@@ -111,12 +126,16 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	appLogger.Info("Shutting down server...")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		appLogger.Error("Server forced to shutdown", slog.Any("error", err))
 	}
-	log.Println("Server exited")
+
+	cancel()
+	workerWg.Wait()
+
+	appLogger.Info("Server exited cleanly")
 }

@@ -50,6 +50,7 @@ type Logger interface {
 
 type AuthPrincipal struct {
 	UserID    string
+	Email     string
 	Role      model.Role
 	SessionID string
 }

@@ -9,16 +9,18 @@ import (
 )
 
 type AccessTokenClaims struct {
-	Role string `json:"role"`
-	SID  string `json:"sid"`
+	Role  string `json:"role"`
+	Email string `json:"email"`
+	SID   string `json:"sid"`
 	jwt.RegisteredClaims
 }
 
-func (s *AuthService) issueAccessToken(userID, sessionID string, role model.Role, now time.Time) (string, time.Time, error) {
-	exp := now.Add(s.cfg.AccessTokenTTL)
+func GenerateAccessToken(jwtSecret, userID, email, sessionID string, role model.Role, ttl time.Duration, now time.Time) (string, time.Time, error) {
+	exp := now.Add(ttl)
 	claims := AccessTokenClaims{
-		Role: string(role),
-		SID:  sessionID,
+		Role:  string(role),
+		Email: email,
+		SID:   sessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userID,
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -26,18 +28,18 @@ func (s *AuthService) issueAccessToken(userID, sessionID string, role model.Role
 		},
 	}
 	t := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	token, err := t.SignedString([]byte(s.cfg.JWTSecret))
+	token, err := t.SignedString([]byte(jwtSecret))
 	if err != nil {
 		return "", time.Time{}, err
 	}
 	return token, exp, nil
 }
 
-func (s *AuthService) parseAccessToken(token string) (*AccessTokenClaims, error) {
+func ParseAccessToken(jwtSecret, token string) (*AccessTokenClaims, error) {
 	claims := &AccessTokenClaims{}
 	parsed, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (any, error) {
-		return []byte(s.cfg.JWTSecret), nil
-	})
+		return []byte(jwtSecret), nil
+	}, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil {
 		return nil, err
 	}
@@ -45,4 +47,12 @@ func (s *AuthService) parseAccessToken(token string) (*AccessTokenClaims, error)
 		return nil, jwt.ErrTokenInvalidClaims
 	}
 	return claims, nil
+}
+
+func (s *AuthService) issueAccessToken(userID, email, sessionID string, role model.Role, now time.Time) (string, time.Time, error) {
+	return GenerateAccessToken(s.cfg.JWTSecret, userID, email, sessionID, role, s.cfg.AccessTokenTTL, now)
+}
+
+func (s *AuthService) parseAccessToken(token string) (*AccessTokenClaims, error) {
+	return ParseAccessToken(s.cfg.JWTSecret, token)
 }
