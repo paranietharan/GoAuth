@@ -13,13 +13,11 @@ import (
 func MigrateUp(db *sql.DB, migrationsDir string) error {
 	log.Println("Starting database migrations...")
 
-	// 1. Create schema_migrations table if not exists
 	_, err := db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)`)
 	if err != nil {
 		return fmt.Errorf("failed to create migration table: %w", err)
 	}
 
-	// 2. Read migration files
 	files, err := os.ReadDir(migrationsDir)
 	if err != nil {
 		return fmt.Errorf("failed to read migrations directory: %w", err)
@@ -33,7 +31,6 @@ func MigrateUp(db *sql.DB, migrationsDir string) error {
 	}
 	sort.Strings(upFiles)
 
-	// 3. Apply pending migrations
 	for _, filename := range upFiles {
 		version := strings.Split(filename, "_")[0]
 

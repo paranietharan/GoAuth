@@ -15,7 +15,6 @@ import (
 func SeedAdminUser(db *sql.DB, cfg *config.Config) error {
 	ctx := context.Background()
 
-	// Check if admin already exists
 	var exists bool
 	query := `SELECT EXISTS(SELECT 1 FROM users WHERE email = $1)`
 	err := db.QueryRowContext(ctx, query, cfg.SeedAdminEmail).Scan(&exists)
@@ -28,13 +27,11 @@ func SeedAdminUser(db *sql.DB, cfg *config.Config) error {
 		return nil
 	}
 
-	// Hash password
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(cfg.SeedAdminPassword), cfg.BcryptCost)
 	if err != nil {
 		return fmt.Errorf("failed to hash admin password: %w", err)
 	}
 
-	// Create admin user (using ADMIN role for bootstrap)
 	insertQuery := `
 		INSERT INTO users (email, password_hash, role, is_active, is_email_verified, email_verified_at)
 		VALUES ($1, $2, $3, $4, $5, NOW())

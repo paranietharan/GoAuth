@@ -29,9 +29,11 @@ func (l *appLogger) WarnContext(ctx context.Context, msg string, args ...any)  {
 func (l *appLogger) ErrorContext(ctx context.Context, msg string, args ...any) { log.Printf("ERROR: "+msg, args...) }
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("Configuration error: %v", err)
+	}
 
-	// 1. Database & Redis
 	db, err := database.NewPostgresDB(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
@@ -43,7 +45,6 @@ func main() {
 		log.Fatalf("Failed to connect to redis: %v", err)
 	}
 
-	// 2. Email System Initialization
 	var provider email.Provider
 	if cfg.IsLocalDevWithoutSMTP {
 		provider = &email.MockProvider{}
@@ -59,19 +60,16 @@ func main() {
 	jobQueue := worker.NewJobQueue(100)
 	emailSender := email.NewService(provider, renderer, jobQueue)
 
-	// 3. Worker Pool Initialization
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	emailWorker := worker.NewEmailWorker(provider, jobQueue)
 	emailWorker.Start(ctx, 5)
 
-	// 4. Repositories
 	userRepo := repository.NewPostgresUserRepository(db)
 	sessionRepo := repository.NewPostgresSessionRepository(db)
 	otpRepo := repository.NewRedisOTPRepository(redisClient)
 
-	// 5. Services
 	authService := service.NewAuthService(
 		userRepo,
 		sessionRepo,
@@ -89,14 +87,11 @@ func main() {
 		&appLogger{},
 	)
 
-	// 6. Middleware & Handlers
 	authMiddleware := middleware.NewAuthMiddleware(cfg.JWTSecret, sessionRepo)
 	authHandler := handler.NewAuthHandler(authService)
 
-	// 7. Router
 	engine := router.New(authHandler, authMiddleware)
 
-	// 8. Server setup
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
 		Handler:      engine,

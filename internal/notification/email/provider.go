@@ -5,12 +5,10 @@ import (
 	"net/smtp"
 )
 
-// Provider defines the interface for sending raw emails.
 type Provider interface {
 	Send(to, subject, body string) error
 }
 
-// SMTPProvider implements the Provider interface using standard SMTP.
 type SMTPProvider struct {
 	host     string
 	port     string
@@ -30,7 +28,10 @@ func NewSMTPProvider(host, port, username, password, from string) *SMTPProvider 
 }
 
 func (p *SMTPProvider) Send(to, subject, body string) error {
-	auth := smtp.PlainAuth("", p.username, p.password, p.host)
+	var auth smtp.Auth
+	if p.username != "" || p.password != "" {
+		auth = smtp.PlainAuth("", p.username, p.password, p.host)
+	}
 
 	msg := []byte(fmt.Sprintf("From: %s\r\n"+
 		"To: %s\r\n"+
@@ -43,7 +44,6 @@ func (p *SMTPProvider) Send(to, subject, body string) error {
 	return smtp.SendMail(addr, auth, p.from, []string{to}, msg)
 }
 
-// MockProvider is used for local development without actual SMTP.
 type MockProvider struct{}
 
 func (p *MockProvider) Send(to, subject, body string) error {

@@ -1,6 +1,5 @@
 package model
 
-// Role defines application roles used by RBAC and JWT claims.
 type Role string
 
 const (

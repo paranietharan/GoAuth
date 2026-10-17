@@ -19,7 +19,6 @@ func UserDetails(c *gin.Context) {
 	currentRole, _ := c.Get("role")
 	requestedID := c.Param("id")
 
-	// Allow if it's the user themselves OR if the user is an Admin
 	if currentUserID != requestedID && currentRole != string(model.RoleAdmin) {
 		c.JSON(403, gin.H{"error": "forbidden: only the owner or an admin can access this"})
 		return
@@ -35,7 +34,6 @@ func UserPrivateDetails(c *gin.Context) {
 	currentUserID, _ := c.Get("user_id")
 	requestedID := c.Param("id")
 
-	// Strictly only allow the owner. Even Admins are blocked.
 	if currentUserID != requestedID {
 		c.JSON(403, gin.H{"error": "forbidden: strictly owner only. admins cannot see this"})
 		return

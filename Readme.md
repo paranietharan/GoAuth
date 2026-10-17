@@ -9,4 +9,5 @@ Template for go authentication service.
 
 ## Docs
 
+- [Environment Variables Reference](docs/ENV.md)
 - [Database Migrations & Seeding Documentation](docs/MIGRATIONS.md)

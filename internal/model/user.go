@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// User maps to the users table defined in the auth contract.
 type User struct {
 	ID                 uuid.UUID  `json:"id"`
 	Email              string     `json:"email"`
