@@ -4,11 +4,10 @@ import (
 	"time"
 )
 
-// Service coordinates the rendering and sending of emails.
 type Service struct {
 	provider Provider
 	renderer *Renderer
-	jobQueue AsyncJobQueue // Interface for async sending
+	jobQueue AsyncJobQueue
 }
 
 type AsyncJobQueue interface {
@@ -44,7 +43,6 @@ func (s *Service) sendAsync(to, subject, templateName string, data map[string]an
 		return nil
 	}
 
-	// Fallback to synchronous if no queue provided (not recommended for production)
 	return s.provider.Send(to, subject, body)
 }
 

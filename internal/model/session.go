@@ -6,7 +6,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// Session maps to the sessions table and tracks token lifecycle per device.
 type Session struct {
 	ID               uuid.UUID `json:"id"`
 	UserID           uuid.UUID `json:"user_id"`

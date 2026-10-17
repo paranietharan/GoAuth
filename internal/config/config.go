@@ -27,7 +27,6 @@ type Config struct {
 	ForgotPasswordOTPTTL  time.Duration
 	ResetTempTokenTTL     time.Duration
 
-	// SMTP
 	IsLocalDevWithoutSMTP bool
 	SMTPHost              string
 	SMTPPort              string

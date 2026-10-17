@@ -1,5 +1,3 @@
--- 000001_create_users_table.up.sql
-
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 DO $$ BEGIN
