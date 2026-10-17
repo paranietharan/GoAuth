@@ -13,4 +13,6 @@ var (
 	ErrNotFound           = New("NOT_FOUND", "resource not found", http.StatusNotFound)
 	ErrInternal           = New("INTERNAL_SERVER_ERROR", "internal server error", http.StatusInternalServerError)
 	ErrEmailNotVerified   = New("EMAIL_NOT_VERIFIED", "email not verified", http.StatusForbidden)
+	ErrRateLimitExceeded  = New("RATE_LIMIT_EXCEEDED", "too many requests, please try again later", http.StatusTooManyRequests)
+	ErrMethodNotAllowed   = New("METHOD_NOT_ALLOWED", "method not allowed", http.StatusMethodNotAllowed)
 )

@@ -128,7 +128,7 @@ func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest, meta Requ
 
 	now := nowUTC()
 	sessionID := uuid.New()
-	accessToken, accessExp, err := s.issueAccessToken(user.ID.String(), sessionID.String(), user.Role, now)
+	accessToken, accessExp, err := s.issueAccessToken(user.ID.String(), user.Email, sessionID.String(), user.Role, now)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "login access token issue failed", "error", err)
 		return nil, apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
@@ -146,6 +146,7 @@ func (s *AuthService) Login(ctx context.Context, req dto.LoginRequest, meta Requ
 	session := &model.Session{
 		ID:               sessionID,
 		UserID:           user.ID,
+		FamilyID:         sessionID,
 		AccessTokenHash:  hashToken(accessToken),
 		RefreshTokenHash: hashToken(refreshToken),
 		AccessExpiresAt:  accessExp,
@@ -243,8 +244,40 @@ func (s *AuthService) Logout(ctx context.Context, principal AuthPrincipal, refre
 		}
 	}
 
-	if err := s.emailSender.SendLogoutNotification(principal.UserID, "Session Revoked"); err != nil {
-		s.logger.ErrorContext(ctx, "failed to send revocation notification", "error", err, "email", principal.UserID)
+	recipient := principal.Email
+	if recipient == "" {
+		if uid, err := uuid.Parse(principal.UserID); err == nil {
+			if u, err := s.userRepo.GetByID(ctx, uid); err == nil {
+				recipient = u.Email
+			}
+		}
+	}
+	if recipient != "" {
+		if err := s.emailSender.SendLogoutNotification(recipient, "Session Revoked"); err != nil {
+			s.logger.ErrorContext(ctx, "failed to send revocation notification", "error", err, "email", recipient)
+		}
+	}
+	return nil
+}
+
+func (s *AuthService) LogoutAll(ctx context.Context, principal AuthPrincipal) *apperrors.AppError {
+	userID, err := uuid.Parse(principal.UserID)
+	if err != nil {
+		return apperrors.ErrUnauthorized
+	}
+	if err := s.sessionRepo.RevokeAllByUserID(ctx, userID); err != nil {
+		s.logger.ErrorContext(ctx, "logout all sessions failed", "error", err)
+		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
+	}
+
+	recipient := principal.Email
+	if recipient == "" {
+		if u, err := s.userRepo.GetByID(ctx, userID); err == nil {
+			recipient = u.Email
+		}
+	}
+	if recipient != "" {
+		_ = s.emailSender.SendLogoutNotification(recipient, "All active sessions have been revoked")
 	}
 	return nil
 }
@@ -261,9 +294,17 @@ func (s *AuthService) RefreshSession(ctx context.Context, refreshToken string, m
 	}
 
 	now := nowUTC()
+
+	// Token reuse detection: if an already-revoked refresh token is presented, revoke the entire token family
 	if session.IsRevoked {
+		s.logger.WarnContext(ctx, "SECURITY ALERT: Refresh token reuse detected, revoking session family", "family_id", session.FamilyID, "user_id", session.UserID)
+		_ = s.sessionRepo.RevokeAllByFamilyID(ctx, session.FamilyID)
+		if u, err := s.userRepo.GetByID(ctx, session.UserID); err == nil {
+			_ = s.emailSender.SendLogoutNotification(u.Email, "Security alert: suspicious token reuse detected, all family sessions terminated")
+		}
 		return nil, apperrors.ErrUnauthorized
 	}
+
 	if session.RefreshExpired(now) {
 		return nil, apperrors.ErrRefreshExpired
 	}
@@ -280,13 +321,8 @@ func (s *AuthService) RefreshSession(ctx context.Context, refreshToken string, m
 		return nil, apperrors.ErrForbidden
 	}
 
-	if err := s.sessionRepo.RevokeByID(ctx, session.ID); err != nil {
-		s.logger.ErrorContext(ctx, "refresh rotate old revoke failed", "error", err)
-		return nil, apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
-	}
-
 	newSessionID := uuid.New()
-	accessToken, accessExp, err := s.issueAccessToken(user.ID.String(), newSessionID.String(), user.Role, now)
+	accessToken, accessExp, err := s.issueAccessToken(user.ID.String(), user.Email, newSessionID.String(), user.Role, now)
 	if err != nil {
 		s.logger.ErrorContext(ctx, "refresh issue access failed", "error", err)
 		return nil, apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
@@ -303,6 +339,7 @@ func (s *AuthService) RefreshSession(ctx context.Context, refreshToken string, m
 	newSession := &model.Session{
 		ID:               newSessionID,
 		UserID:           user.ID,
+		FamilyID:         session.FamilyID,
 		AccessTokenHash:  hashToken(accessToken),
 		RefreshTokenHash: hashToken(newRefreshToken),
 		AccessExpiresAt:  accessExp,
@@ -320,9 +357,17 @@ func (s *AuthService) RefreshSession(ctx context.Context, refreshToken string, m
 	if device != "" {
 		newSession.Device = &device
 	}
-	if err := s.sessionRepo.Create(ctx, newSession); err != nil {
-		s.logger.ErrorContext(ctx, "refresh new session create failed", "error", err)
+
+	// Atomic rotation: prevents race conditions under concurrent refresh requests
+	rotated, err := s.sessionRepo.RotateSession(ctx, session.ID, newSession)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "refresh rotate transaction failed", "error", err)
 		return nil, apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
+	}
+	if !rotated {
+		s.logger.WarnContext(ctx, "SECURITY ALERT: Concurrent rotation conflict detected", "session_id", session.ID)
+		_ = s.sessionRepo.RevokeAllByFamilyID(ctx, session.FamilyID)
+		return nil, apperrors.ErrUnauthorized
 	}
 
 	return &dto.AuthTokensResponse{
@@ -336,6 +381,111 @@ func (s *AuthService) RefreshSession(ctx context.Context, refreshToken string, m
 			IsEmailVerified: user.IsEmailVerified,
 		},
 	}, nil
+}
+
+func (s *AuthService) ChangePassword(ctx context.Context, principal AuthPrincipal, req dto.ChangePasswordRequest) *apperrors.AppError {
+	userID, err := uuid.Parse(principal.UserID)
+	if err != nil {
+		return apperrors.ErrUnauthorized
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return apperrors.ErrNotFound
+		}
+		s.logger.ErrorContext(ctx, "change password user lookup failed", "error", err)
+		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword)) != nil {
+		return apperrors.ErrInvalidCredentials
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), s.cfg.BcryptCost)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "change password hash failed", "error", err)
+		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
+	}
+
+	if err := s.userRepo.UpdatePasswordHash(ctx, user.ID, string(newHash)); err != nil {
+		s.logger.ErrorContext(ctx, "change password update failed", "error", err)
+		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
+	}
+
+	_ = s.sessionRepo.RevokeAllByUserID(ctx, user.ID)
+
+	if err := s.emailSender.SendPasswordChangedEmail(user.Email, "/login"); err != nil {
+		s.logger.WarnContext(ctx, "change password notification failed", "error", err)
+	}
+
+	return nil
+}
+
+func (s *AuthService) GetMe(ctx context.Context, principal AuthPrincipal) (*dto.UserProfileResponse, *apperrors.AppError) {
+	userID, err := uuid.Parse(principal.UserID)
+	if err != nil {
+		return nil, apperrors.ErrUnauthorized
+	}
+
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, apperrors.ErrNotFound
+		}
+		s.logger.ErrorContext(ctx, "get me user lookup failed", "error", err)
+		return nil, apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
+	}
+
+	return &dto.UserProfileResponse{
+		ID:              user.ID.String(),
+		Email:           user.Email,
+		Role:            string(user.Role),
+		IsActive:        user.IsActive,
+		IsEmailVerified: user.IsEmailVerified,
+	}, nil
+}
+
+func (s *AuthService) ListUsers(ctx context.Context, limit, offset int) (*dto.UsersListResponse, *apperrors.AppError) {
+	users, err := s.userRepo.ListUsers(ctx, limit, offset)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "list users failed", "error", err)
+		return nil, apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
+	}
+
+	items := make([]dto.UserProfileResponse, 0, len(users))
+	for _, u := range users {
+		items = append(items, dto.UserProfileResponse{
+			ID:              u.ID.String(),
+			Email:           u.Email,
+			Role:            string(u.Role),
+			IsActive:        u.IsActive,
+			IsEmailVerified: u.IsEmailVerified,
+		})
+	}
+
+	return &dto.UsersListResponse{Users: items}, nil
+}
+
+func (s *AuthService) UpdateUserStatus(ctx context.Context, targetUserID string, isActive bool) *apperrors.AppError {
+	uid, err := uuid.Parse(targetUserID)
+	if err != nil {
+		return apperrors.ErrValidationFailed
+	}
+
+	if err := s.userRepo.SetIsActive(ctx, uid, isActive); err != nil {
+		if err == sql.ErrNoRows {
+			return apperrors.ErrNotFound
+		}
+		s.logger.ErrorContext(ctx, "update user status failed", "error", err)
+		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
+	}
+
+	if !isActive {
+		_ = s.sessionRepo.RevokeAllByUserID(ctx, uid)
+	}
+
+	return nil
 }
 
 func (s *AuthService) ListSessions(ctx context.Context, principal AuthPrincipal) (*dto.SessionsResponse, *apperrors.AppError) {

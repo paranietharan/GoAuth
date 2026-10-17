@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"log"
+	"sync"
 
 	"GoAuth/internal/notification/email"
 )
@@ -33,9 +34,17 @@ func NewEmailWorker(provider email.Provider, jobQueue *JobQueue) *EmailWorker {
 	}
 }
 
-func (w *EmailWorker) Start(ctx context.Context, numWorkers int) {
+func (w *EmailWorker) Start(ctx context.Context, numWorkers int, wg *sync.WaitGroup) {
 	for i := 0; i < numWorkers; i++ {
-		go w.worker(ctx, i)
+		if wg != nil {
+			wg.Add(1)
+		}
+		go func(id int) {
+			if wg != nil {
+				defer wg.Done()
+			}
+			w.worker(ctx, id)
+		}(i)
 	}
 	log.Printf("Started %d email workers", numWorkers)
 }
@@ -45,8 +54,15 @@ func (w *EmailWorker) worker(ctx context.Context, id int) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("Email worker %d stopped", id)
-			return
+			for {
+				select {
+				case job := <-w.jobQueue.jobs:
+					w.processJob(job, id)
+				default:
+					log.Printf("Email worker %d stopped", id)
+					return
+				}
+			}
 		case job := <-w.jobQueue.jobs:
 			w.processJob(job, id)
 		}

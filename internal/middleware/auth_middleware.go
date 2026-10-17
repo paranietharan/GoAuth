@@ -15,16 +15,22 @@ import (
 type AuthMiddleware struct {
 	jwtSecret   string
 	sessionRepo repository.SessionRepository
+	userRepo    repository.UserRepository
 }
 
-func NewAuthMiddleware(jwtSecret string, sessionRepo repository.SessionRepository) *AuthMiddleware {
-	return &AuthMiddleware{jwtSecret: jwtSecret, sessionRepo: sessionRepo}
+func NewAuthMiddleware(jwtSecret string, sessionRepo repository.SessionRepository, userRepo repository.UserRepository) *AuthMiddleware {
+	return &AuthMiddleware{jwtSecret: jwtSecret, sessionRepo: sessionRepo, userRepo: userRepo}
 }
 
 func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
-		if token == "" || token == c.GetHeader("Authorization") {
+		authHeader := c.GetHeader("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			apperrors.Write(c, apperrors.ErrUnauthorized)
+			return
+		}
+		token := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		if token == "" {
 			apperrors.Write(c, apperrors.ErrUnauthorized)
 			return
 		}
@@ -32,7 +38,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		claims := &accessClaims{}
 		parsed, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (any, error) {
 			return []byte(m.jwtSecret), nil
-		})
+		}, jwt.WithValidMethods([]string{"HS256"}))
 		if err != nil || !parsed.Valid {
 			apperrors.Write(c, apperrors.ErrUnauthorized)
 			return
@@ -52,6 +58,14 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
+		if m.userRepo != nil {
+			user, err := m.userRepo.GetByID(c.Request.Context(), session.UserID)
+			if err != nil || !user.IsActive {
+				apperrors.Write(c, apperrors.ErrForbidden)
+				return
+			}
+		}
+
 		role := model.Role(claims.Role)
 		if !role.IsValid() {
 			apperrors.Write(c, apperrors.ErrUnauthorized)
@@ -59,6 +73,7 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 		}
 
 		c.Set("user_id", claims.Subject)
+		c.Set("user_email", claims.Email)
 		c.Set("role", string(role))
 		c.Set("session_id", claims.SID)
 		c.Next()
@@ -66,8 +81,9 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 }
 
 type accessClaims struct {
-	Role string `json:"role"`
-	SID  string `json:"sid"`
+	Role  string `json:"role"`
+	Email string `json:"email"`
+	SID   string `json:"sid"`
 	jwt.RegisteredClaims
 }
 

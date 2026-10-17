@@ -75,6 +75,78 @@ func MigrateUp(db *sql.DB, migrationsDir string) error {
 	return nil
 }
 
+func MigrateDown(db *sql.DB, migrationsDir string) error {
+	log.Println("Rolling back database migrations...")
+
+	rows, err := db.Query("SELECT version FROM schema_migrations ORDER BY version DESC")
+	if err != nil {
+		return fmt.Errorf("failed to fetch applied migrations: %w", err)
+	}
+	defer rows.Close()
+
+	var applied []string
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return err
+		}
+		applied = append(applied, v)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	files, err := os.ReadDir(migrationsDir)
+	if err != nil {
+		return fmt.Errorf("failed to read migrations directory: %w", err)
+	}
+
+	downMap := make(map[string]string)
+	for _, f := range files {
+		if !f.IsDir() && strings.HasSuffix(f.Name(), ".down.sql") {
+			version := strings.Split(f.Name(), "_")[0]
+			downMap[version] = f.Name()
+		}
+	}
+
+	for _, version := range applied {
+		filename, exists := downMap[version]
+		if !exists {
+			log.Printf("Warning: no down migration found for version %s, skipping", version)
+			continue
+		}
+
+		log.Printf("Rolling back migration: %s", filename)
+		content, err := os.ReadFile(filepath.Join(migrationsDir, filename))
+		if err != nil {
+			return fmt.Errorf("failed to read down migration %s: %w", filename, err)
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("failed to start transaction: %w", err)
+		}
+
+		if _, err := tx.Exec(string(content)); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to execute down migration %s: %w", filename, err)
+		}
+
+		if _, err := tx.Exec("DELETE FROM schema_migrations WHERE version = $1", version); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to delete migration version %s: %w", filename, err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("failed to commit rollback for %s: %w", filename, err)
+		}
+		log.Printf("Successfully rolled back migration: %s", filename)
+	}
+
+	log.Println("Database rollbacks completed successfully.")
+	return nil
+}
+
 func DropAll(db *sql.DB) error {
 	log.Println("Dropping all tables...")
 	query := `

@@ -9,6 +9,7 @@ import (
 type Session struct {
 	ID               uuid.UUID `json:"id"`
 	UserID           uuid.UUID `json:"user_id"`
+	FamilyID         uuid.UUID `json:"family_id"`
 	AccessTokenHash  string    `json:"-"`
 	RefreshTokenHash string    `json:"-"`
 	AccessExpiresAt  time.Time `json:"access_expires_at"`

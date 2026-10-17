@@ -20,17 +20,18 @@ func NewPostgresSessionRepository(db *sql.DB) *PostgresSessionRepository {
 func (r *PostgresSessionRepository) Create(ctx context.Context, session *model.Session) error {
 	query := `
 		INSERT INTO sessions (
-			id, user_id, access_token_hash, refresh_token_hash,
+			id, user_id, family_id, access_token_hash, refresh_token_hash,
 			access_expires_at, refresh_expires_at, is_revoked, ip_address,
 			user_agent, device, created_at, updated_at
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 	`
 	_, err := r.db.ExecContext(
 		ctx,
 		query,
 		session.ID,
 		session.UserID,
+		session.FamilyID,
 		session.AccessTokenHash,
 		session.RefreshTokenHash,
 		session.AccessExpiresAt,
@@ -54,17 +55,18 @@ func (r *PostgresSessionRepository) CreateWithLoginMetadata(ctx context.Context,
 
 	insertSession := `
 		INSERT INTO sessions (
-			id, user_id, access_token_hash, refresh_token_hash,
+			id, user_id, family_id, access_token_hash, refresh_token_hash,
 			access_expires_at, refresh_expires_at, is_revoked, ip_address,
 			user_agent, device, created_at, updated_at
 		)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 	`
 	if _, err := tx.ExecContext(
 		ctx,
 		insertSession,
 		session.ID,
 		session.UserID,
+		session.FamilyID,
 		session.AccessTokenHash,
 		session.RefreshTokenHash,
 		session.AccessExpiresAt,
@@ -105,7 +107,7 @@ func (r *PostgresSessionRepository) CreateWithLoginMetadata(ctx context.Context,
 
 func (r *PostgresSessionRepository) GetByAccessTokenHash(ctx context.Context, accessTokenHash string) (*model.Session, error) {
 	query := `
-		SELECT id, user_id, access_token_hash, refresh_token_hash, access_expires_at,
+		SELECT id, user_id, family_id, access_token_hash, refresh_token_hash, access_expires_at,
 			refresh_expires_at, is_revoked, ip_address::text, user_agent, device, created_at, updated_at
 		FROM sessions
 		WHERE access_token_hash = $1
@@ -115,7 +117,7 @@ func (r *PostgresSessionRepository) GetByAccessTokenHash(ctx context.Context, ac
 
 func (r *PostgresSessionRepository) GetByRefreshTokenHash(ctx context.Context, refreshTokenHash string) (*model.Session, error) {
 	query := `
-		SELECT id, user_id, access_token_hash, refresh_token_hash, access_expires_at,
+		SELECT id, user_id, family_id, access_token_hash, refresh_token_hash, access_expires_at,
 			refresh_expires_at, is_revoked, ip_address::text, user_agent, device, created_at, updated_at
 		FROM sessions
 		WHERE refresh_token_hash = $1
@@ -125,7 +127,7 @@ func (r *PostgresSessionRepository) GetByRefreshTokenHash(ctx context.Context, r
 
 func (r *PostgresSessionRepository) GetByID(ctx context.Context, sessionID uuid.UUID) (*model.Session, error) {
 	query := `
-		SELECT id, user_id, access_token_hash, refresh_token_hash, access_expires_at,
+		SELECT id, user_id, family_id, access_token_hash, refresh_token_hash, access_expires_at,
 			refresh_expires_at, is_revoked, ip_address::text, user_agent, device, created_at, updated_at
 		FROM sessions
 		WHERE id = $1
@@ -135,7 +137,7 @@ func (r *PostgresSessionRepository) GetByID(ctx context.Context, sessionID uuid.
 
 func (r *PostgresSessionRepository) ListActiveByUserID(ctx context.Context, userID uuid.UUID) ([]model.Session, error) {
 	query := `
-		SELECT id, user_id, access_token_hash, refresh_token_hash, access_expires_at,
+		SELECT id, user_id, family_id, access_token_hash, refresh_token_hash, access_expires_at,
 			refresh_expires_at, is_revoked, ip_address::text, user_agent, device, created_at, updated_at
 		FROM sessions
 		WHERE user_id = $1 AND is_revoked = FALSE AND refresh_expires_at > NOW()
@@ -194,6 +196,71 @@ func (r *PostgresSessionRepository) RevokeAllByUserID(ctx context.Context, userI
 	return err
 }
 
+func (r *PostgresSessionRepository) RevokeAllByFamilyID(ctx context.Context, familyID uuid.UUID) error {
+	const query = `
+		UPDATE sessions
+		SET is_revoked = TRUE, updated_at = NOW()
+		WHERE family_id = $1 AND is_revoked = FALSE
+	`
+	_, err := r.db.ExecContext(ctx, query, familyID)
+	return err
+}
+
+func (r *PostgresSessionRepository) RotateSession(ctx context.Context, oldSessionID uuid.UUID, newSession *model.Session) (bool, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+
+	const revokeOld = `
+		UPDATE sessions
+		SET is_revoked = TRUE, updated_at = NOW()
+		WHERE id = $1 AND is_revoked = FALSE
+	`
+	res, err := tx.ExecContext(ctx, revokeOld, oldSessionID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if affected == 0 {
+		return false, nil
+	}
+
+	const insertNew = `
+		INSERT INTO sessions (
+			id, user_id, family_id, access_token_hash, refresh_token_hash,
+			access_expires_at, refresh_expires_at, is_revoked, ip_address,
+			user_agent, device, created_at, updated_at
+		)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+	`
+	if _, err := tx.ExecContext(
+		ctx,
+		insertNew,
+		newSession.ID,
+		newSession.UserID,
+		newSession.FamilyID,
+		newSession.AccessTokenHash,
+		newSession.RefreshTokenHash,
+		newSession.AccessExpiresAt,
+		newSession.RefreshExpiresAt,
+		newSession.IsRevoked,
+		newSession.IPAddress,
+		newSession.UserAgent,
+		newSession.Device,
+		newSession.CreatedAt,
+		newSession.UpdatedAt,
+	); err != nil {
+		return false, err
+	}
+
+	return true, tx.Commit()
+}
+
 func (r *PostgresSessionRepository) scanOne(ctx context.Context, query string, arg any) (*model.Session, error) {
 	row := r.db.QueryRowContext(ctx, query, arg)
 	return scanSessionRow(row)
@@ -212,6 +279,7 @@ func scanSessionRow(s scanner) (*model.Session, error) {
 	err := s.Scan(
 		&session.ID,
 		&session.UserID,
+		&session.FamilyID,
 		&session.AccessTokenHash,
 		&session.RefreshTokenHash,
 		&session.AccessExpiresAt,

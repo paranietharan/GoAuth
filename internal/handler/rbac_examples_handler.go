@@ -1,6 +1,7 @@
 package handler
 
 import (
+	apperrors "GoAuth/internal/errors"
 	"GoAuth/internal/model"
 
 	"github.com/gin-gonic/gin"
@@ -20,7 +21,7 @@ func UserDetails(c *gin.Context) {
 	requestedID := c.Param("id")
 
 	if currentUserID != requestedID && currentRole != string(model.RoleAdmin) {
-		c.JSON(403, gin.H{"error": "forbidden: only the owner or an admin can access this"})
+		apperrors.Write(c, apperrors.ErrForbidden)
 		return
 	}
 
@@ -35,7 +36,7 @@ func UserPrivateDetails(c *gin.Context) {
 	requestedID := c.Param("id")
 
 	if currentUserID != requestedID {
-		c.JSON(403, gin.H{"error": "forbidden: strictly owner only. admins cannot see this"})
+		apperrors.Write(c, apperrors.ErrForbidden)
 		return
 	}
 

@@ -33,12 +33,16 @@ func main() {
 			if err := runner.MigrateUp(db, "database/migrations"); err != nil {
 				log.Fatalf("Migration up failed: %v", err)
 			}
+		case "down":
+			if err := runner.MigrateDown(db, "database/migrations"); err != nil {
+				log.Fatalf("Migration down failed: %v", err)
+			}
 		case "drop":
 			if err := runner.DropAll(db); err != nil {
 				log.Fatalf("Drop all failed: %v", err)
 			}
 		default:
-			log.Fatalf("Unknown migration command: %s. Use 'up' or 'drop'.", *migrateCmd)
+			log.Fatalf("Unknown migration command: %s. Use 'up', 'down', or 'drop'.", *migrateCmd)
 		}
 	}
 
@@ -49,6 +53,6 @@ func main() {
 	}
 
 	if *migrateCmd == "" && !*seedCmd {
-		log.Println("No command provided. Use -migrate up|drop or -seed")
+		log.Println("No command provided. Use -migrate up|down|drop or -seed")
 	}
 }
