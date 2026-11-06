@@ -1,4 +1,4 @@
-FROM golang:alpine AS builder
+FROM golang:1.27.3-alpine3.24 AS builder
 
 WORKDIR /build
 
@@ -12,7 +12,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /build/server cmd/server/main.go
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /build/migrate database/cmd/main.go
 
-FROM alpine:latest
+FROM alpine:3.24
 
 WORKDIR /app
 
