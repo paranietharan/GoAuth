@@ -1,6 +1,6 @@
 # GoAuth
 
-GoAuth is a REST authentication and session management service built with **Go (`Gin`)**, **PostgreSQL (`pgx/v5`)**, and **Redis**. It implements rotating refresh-token sessions with token-family reuse detection, sliding-window rate limiting, role-based access control, secret-redacted structured logging, and background email workers.
+GoAuth is a REST authentication and session management service built with **Go (`Gin`)**, **PostgreSQL (`lib/pq`)**, and **Redis**. It implements rotating refresh-token sessions with token-family reuse detection, sliding-window rate limiting, role-based access control, secret-redacted structured logging, and background email workers.
 
 ---
 
