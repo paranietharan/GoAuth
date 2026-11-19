@@ -19,7 +19,8 @@ import (
 
 type mockUserRepo struct {
 	repository.UserRepository
-	users map[uuid.UUID]*model.User
+	users  map[uuid.UUID]*model.User
+	revoke func(context.Context, uuid.UUID) error
 }
 
 func (m *mockUserRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.User, error) {
@@ -29,8 +30,13 @@ func (m *mockUserRepo) GetByID(ctx context.Context, id uuid.UUID) (*model.User, 
 	return nil, apperrors.ErrNotFound
 }
 
-func (m *mockUserRepo) UpdatePasswordHash(ctx context.Context, id uuid.UUID, hash string) error {
+func (m *mockUserRepo) UpdatePasswordAndRevokeSessions(ctx context.Context, id uuid.UUID, hash string) error {
 	if u, ok := m.users[id]; ok {
+		if m.revoke != nil {
+			if err := m.revoke(ctx, id); err != nil {
+				return err
+			}
+		}
 		u.PasswordHash = hash
 		return nil
 	}
@@ -95,9 +101,9 @@ type mockEmailSender struct {
 }
 
 func (m *mockEmailSender) SendSignupEmail(to, otp string, expiryMinutes int) error { return nil }
-func (m *mockEmailSender) SendVerifyEmail(to string, loginLink string) error         { return nil }
-func (m *mockEmailSender) SendLoginNotification(to, ip, device string) error        { return nil }
-func (m *mockEmailSender) SendLogoutNotification(to, reason string) error           { return nil }
+func (m *mockEmailSender) SendVerifyEmail(to string, loginLink string) error       { return nil }
+func (m *mockEmailSender) SendLoginNotification(to, ip, device string) error       { return nil }
+func (m *mockEmailSender) SendLogoutNotification(to, reason string) error          { return nil }
 func (m *mockEmailSender) SendPasswordResetEmail(to, otp string, expiryMinutes int) error {
 	return nil
 }
@@ -266,6 +272,7 @@ func TestChangePassword(t *testing.T) {
 
 	userRepo := &mockUserRepo{users: map[uuid.UUID]*model.User{userID: user}}
 	sessionRepo := newMockSessionRepo()
+	userRepo.revoke = sessionRepo.RevokeAllByUserID
 
 	authSvc := service.NewAuthService(
 		userRepo,
