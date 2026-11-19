@@ -57,6 +57,11 @@ jobs:
           check-latest: true
           cache: true
 
+      - name: Check Go formatting
+        run: |
+          git ls-files -z '*.go' | xargs -0 gofmt -l > "$RUNNER_TEMP/gofmt-files"
+          cat "$RUNNER_TEMP/gofmt-files"
+          test ! -s "$RUNNER_TEMP/gofmt-files"
       - name: Verify Dependencies
         run: go mod verify
 
