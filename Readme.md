@@ -18,8 +18,8 @@ GoAuth is a REST authentication and session management service built with **Go (
   - Sends verification and password-reset OTP emails asynchronously via a worker pool (using Mailpit in local development or SMTP in production) with graceful shutdown draining.
 - **Role-Based Access Control (`internal/middleware/auth.go`)**:
   - Route middleware enforcing `USER`, `ADMIN`, and `OWNER` roles alongside active-account checks.
-- **OpenAPI Spec & CI Pipeline**:
-  - Includes an OpenAPI 3.0 specification (`docs/openapi.yaml`), unit and integration tests (`Makefile`), and GitHub Actions workflows running `go test -race`, `golangci-lint`, and `govulncheck`.
+- **API specification and tests**
+  - See the OpenAPI 3.0 specification in `docs/openapi.yaml`. Run the tests locally with `make test-race`.
 
 ---
 

@@ -100,24 +100,20 @@ func (r *PostgresUserRepository) MarkEmailVerified(ctx context.Context, userID u
 	return nil
 }
 
-func (r *PostgresUserRepository) UpdatePasswordHash(ctx context.Context, userID uuid.UUID, passwordHash string) error {
+func (r *PostgresUserRepository) UpdatePasswordAndRevokeSessions(ctx context.Context, userID uuid.UUID, passwordHash string) error {
 	const query = `
-		UPDATE users
+		WITH changed AS (
+          UPDATE users
 		SET password_hash = $2, updated_at = NOW()
 		WHERE id = $1
+          RETURNING id
+        ), revoked AS (
+          UPDATE sessions SET is_revoked = TRUE, updated_at = NOW()
+          WHERE user_id IN (SELECT id FROM changed) AND is_revoked = FALSE
+        )
+        SELECT id FROM changed
 	`
-	res, err := r.db.ExecContext(ctx, query, userID, passwordHash)
-	if err != nil {
-		return err
-	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return sql.ErrNoRows
-	}
-	return nil
+	return r.db.QueryRowContext(ctx, query, userID, passwordHash).Scan(&userID)
 }
 
 func (r *PostgresUserRepository) SetIsActive(ctx context.Context, userID uuid.UUID, isActive bool) error {

@@ -408,12 +408,10 @@ func (s *AuthService) ChangePassword(ctx context.Context, principal AuthPrincipa
 		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
 	}
 
-	if err := s.userRepo.UpdatePasswordHash(ctx, user.ID, string(newHash)); err != nil {
+	if err := s.userRepo.UpdatePasswordAndRevokeSessions(ctx, user.ID, string(newHash)); err != nil {
 		s.logger.ErrorContext(ctx, "change password update failed", "error", err)
 		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
 	}
-
-	_ = s.sessionRepo.RevokeAllByUserID(ctx, user.ID)
 
 	if err := s.emailSender.SendPasswordChangedEmail(user.Email, "/login"); err != nil {
 		s.logger.WarnContext(ctx, "change password notification failed", "error", err)
@@ -628,12 +626,8 @@ func (s *AuthService) ResetPassword(ctx context.Context, req dto.PasswordResetRe
 		s.logger.ErrorContext(ctx, "reset password hash failed", "error", err)
 		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
 	}
-	if err := s.userRepo.UpdatePasswordHash(ctx, user.ID, string(passwordHash)); err != nil {
+	if err := s.userRepo.UpdatePasswordAndRevokeSessions(ctx, user.ID, string(passwordHash)); err != nil {
 		s.logger.ErrorContext(ctx, "reset password update failed", "error", err)
-		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
-	}
-	if err := s.sessionRepo.RevokeAllByUserID(ctx, user.ID); err != nil {
-		s.logger.ErrorContext(ctx, "reset password revoke sessions failed", "error", err)
 		return apperrors.Wrap(apperrors.ErrInternal.Code, apperrors.ErrInternal.Message, apperrors.ErrInternal.HTTPStatus, err)
 	}
 	if err := s.otpRepo.DeletePasswordResetTempToken(ctx, tokenHash); err != nil {

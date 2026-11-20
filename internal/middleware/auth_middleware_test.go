@@ -63,16 +63,16 @@ func TestAuthMiddleware(t *testing.T) {
 	}
 
 	activeSession := &model.Session{
-		ID:        sessionID,
-		UserID:    userID,
-		IsRevoked: false,
+		ID:              sessionID,
+		UserID:          userID,
+		IsRevoked:       false,
 		AccessExpiresAt: time.Now().UTC().Add(24 * time.Hour),
 	}
 
 	revokedSession := &model.Session{
-		ID:        sessionID,
-		UserID:    userID,
-		IsRevoked: true,
+		ID:              sessionID,
+		UserID:          userID,
+		IsRevoked:       true,
 		AccessExpiresAt: time.Now().UTC().Add(24 * time.Hour),
 	}
 

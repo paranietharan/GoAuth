@@ -20,9 +20,9 @@ func DefaultCORSConfig(allowedOrigins []string) CORSConfig {
 		allowedOrigins = []string{"*"}
 	}
 	return CORSConfig{
-		AllowedOrigins: allowedOrigins,
-		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"},
-		AllowedHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
+		AllowedOrigins:   allowedOrigins,
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"},
+		AllowedHeaders:   []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"},
 		AllowCredentials: true,
 		MaxAgeSeconds:    43200, // 12 hours
 	}

@@ -328,4 +328,3 @@ func TestRBACAndUserDeactivation(t *testing.T) {
 		t.Fatalf("expected 403 Forbidden for regular user accessing /admin/users, got %d", w.Code)
 	}
 }
-

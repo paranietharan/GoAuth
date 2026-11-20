@@ -23,7 +23,7 @@ type UserRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*model.User, error)
 	ListUsers(ctx context.Context, limit, offset int) ([]model.User, error)
 	MarkEmailVerified(ctx context.Context, userID uuid.UUID, verifiedAt time.Time) error
-	UpdatePasswordHash(ctx context.Context, userID uuid.UUID, passwordHash string) error
+	UpdatePasswordAndRevokeSessions(ctx context.Context, userID uuid.UUID, passwordHash string) error
 	SetIsActive(ctx context.Context, userID uuid.UUID, isActive bool) error
 	IsEmailTaken(ctx context.Context, email string) (bool, error)
 }
